@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "../javatest/main.java"
+		},
+		{
+			"path": "../OneDrive/Documents/interviewllm"
+		},
+		{
+			"path": "../Downloads/heart"
+		}
+	],
+	"settings": {
+		"java.project.sourcePaths": [
+			"src"
+		],
+		"java.project.outputPath": "bin",
+		"java.project.referencedLibraries": [
+			"lib/**/*.jar"
+		]
+	}
+}
