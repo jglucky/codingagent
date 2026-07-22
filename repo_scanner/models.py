@@ -26,6 +26,19 @@ class Finding:
     data_flow: list[str] = field(default_factory=list)
     snippet: str | None = None
     remediation: str | None = None
+    policy: str | None = None
+
+
+@dataclass
+class PolicyCompliance:
+    policy_id: str
+    policy_number: int
+    title: str
+    status: str
+    findings_count: int
+    message: str
+    vault_integrations: list[str] = field(default_factory=list)
+    policy_group: str = "secrets"
 
 
 @dataclass
@@ -37,6 +50,9 @@ class ScanSummary:
     by_severity: dict[str, int]
     by_category: dict[str, int]
     findings: list[Finding]
+    policy_compliance: list[PolicyCompliance] = field(default_factory=list)
+    vault_integrations: list[str] = field(default_factory=list)
+    validation_integrations: list[str] = field(default_factory=list)
 
 
 def make_fingerprint(rule_id: str, file_path: str, line: int | None, match: str) -> str:
@@ -50,6 +66,9 @@ def build_summary(
     repo_url: str,
     repo_path: str,
     files_scanned: int,
+    policy_compliance: list[PolicyCompliance] | None = None,
+    vault_integrations: list[str] | None = None,
+    validation_integrations: list[str] | None = None,
 ) -> ScanSummary:
     severity_order = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
     sorted_findings = sorted(
@@ -71,6 +90,9 @@ def build_summary(
         by_severity=by_severity,
         by_category=by_category,
         findings=sorted_findings,
+        policy_compliance=policy_compliance or [],
+        vault_integrations=vault_integrations or [],
+        validation_integrations=validation_integrations or [],
     )
 
 
@@ -79,6 +101,7 @@ def filter_findings(
     *,
     severity: str | None = None,
     category: str | None = None,
+    policy: str | None = None,
     file_pattern: str | None = None,
 ) -> list[Finding]:
     """Filter findings by severity, category, or file path regex."""
@@ -88,6 +111,8 @@ def filter_findings(
     filtered: list[Finding] = []
     for finding in summary.findings:
         if category and finding.category != category:
+            continue
+        if policy and finding.policy != policy:
             continue
         if min_rank >= 0 and SEVERITY_RANK.get(finding.severity, -1) < min_rank:
             continue

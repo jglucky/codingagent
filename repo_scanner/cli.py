@@ -63,8 +63,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[
             "secrets", "injection", "xss", "path_traversal",
             "deserialization", "command_injection", "security",
+            "authentication", "authorization", "input_validation", "csrf",
         ],
         help="Filter displayed results to a category",
+    )
+    parser.add_argument(
+        "--filter-policy",
+        help=(
+            "Filter findings by policy id (e.g. hardcoded_passwords, sql_injection, "
+            "authentication, csrf, cloud_infra) or checklist id (e.g. chk.1.api_keys)"
+        ),
     )
     parser.add_argument(
         "--file-pattern",
@@ -108,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         keep_clone=args.keep_clone,
         filter_severity=args.filter_severity,
         filter_category=args.filter_category,
+        filter_policy=args.filter_policy,
         file_pattern=args.file_pattern,
         html_report=not args.no_html,
         json_report=not args.no_json,

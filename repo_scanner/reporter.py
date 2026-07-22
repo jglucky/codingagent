@@ -62,6 +62,59 @@ def print_console_report(summary: ScanSummary, *, use_color: bool | None = None)
             print(f"  {category:20} {count}")
         print()
 
+    secret_policies = [p for p in summary.policy_compliance if p.policy_group == "secrets"]
+    iv_policies = [p for p in summary.policy_compliance if p.policy_group == "input_validation"]
+    checklist = [p for p in summary.policy_compliance if p.policy_group == "ntt_checklist"]
+
+    for group_title, policies, integration_label in (
+        ("Secret Management Policy Compliance", secret_policies, "Vaults"),
+        ("Input Validation Policy Compliance", iv_policies, "Validation"),
+    ):
+        if not policies:
+            continue
+        print(f"{BOLD}{group_title}{RESET if use_color else ''}")
+        print("-" * 60)
+        for policy in policies:
+            status = policy.status.upper()
+            if use_color:
+                color = "\033[92m" if policy.status == "pass" else "\033[91m" if policy.status == "fail" else "\033[93m"
+                status = f"{color}{status}{RESET}"
+            print(f"  {policy.policy_number}. {policy.title}: {status}")
+            print(f"     {policy.message}")
+            if policy.vault_integrations:
+                print(f"     {integration_label}: {', '.join(policy.vault_integrations)}")
+        print()
+
+    if checklist:
+        print(f"{BOLD}NTT Pre-Snyk Code Security Validation Checklist{RESET if use_color else ''}")
+        print("-" * 60)
+        pass_n = sum(1 for p in checklist if p.status == "pass")
+        fail_n = sum(1 for p in checklist if p.status == "fail")
+        manual_n = sum(1 for p in checklist if p.status == "manual")
+        print(f"  Items: {len(checklist)}  PASS: {pass_n}  FAIL: {fail_n}  MANUAL: {manual_n}")
+        print()
+        for policy in checklist:
+            status = policy.status.upper()
+            if use_color:
+                if policy.status == "pass":
+                    color = "\033[92m"
+                elif policy.status == "fail":
+                    color = "\033[91m"
+                else:
+                    color = "\033[93m"
+                status = f"{color}{status}{RESET}"
+            print(f"  [{status}] {policy.title}")
+            if policy.status != "pass" or "Partial" in policy.message or "manual" in policy.message.lower():
+                print(f"         {policy.message}")
+        print()
+
+    if summary.vault_integrations:
+        print(f"Detected vault integrations: {', '.join(summary.vault_integrations)}")
+    if summary.validation_integrations:
+        print(f"Detected validation frameworks: {', '.join(summary.validation_integrations)}")
+    if summary.vault_integrations or summary.validation_integrations:
+        print()
+
     if not summary.findings:
         print("No security issues found.")
         return
@@ -78,6 +131,8 @@ def print_console_report(summary: ScanSummary, *, use_color: bool | None = None)
                 location += f"-{finding.end_line}"
         print(f"   File: {location}")
         print(f"   Category: {finding.category}")
+        if finding.policy:
+            print(f"   Policy: {finding.policy}")
         print(f"   Rule: {finding.rule_id}")
         if finding.message:
             print(f"   Details: {finding.message}")
@@ -103,6 +158,9 @@ def summary_to_dict(summary: ScanSummary) -> dict:
             "by_severity": summary.by_severity,
             "by_category": summary.by_category,
         },
+        "policy_compliance": [asdict(policy) for policy in summary.policy_compliance],
+        "vault_integrations": summary.vault_integrations,
+        "validation_integrations": summary.validation_integrations,
         "findings": [asdict(finding) for finding in summary.findings],
     }
 
@@ -139,6 +197,16 @@ def write_html_report(summary: ScanSummary, output_path: Path) -> None:
         f"<li><strong>{category}</strong>: {count}</li>"
         for category, count in sorted(summary.by_category.items())
     )
+    def _policy_rows(policies: list) -> str:
+        return "".join(
+            f"<tr><td>{policy.policy_number}</td><td>{_escape(policy.title)}</td>"
+            f"<td><span class='pol-{policy.status}'>{policy.status}</span></td>"
+            f"<td>{policy.findings_count}</td><td>{_escape(policy.message)}</td></tr>"
+            for policy in policies
+        )
+
+    secret_policy_rows = _policy_rows([p for p in summary.policy_compliance if p.policy_group == "secrets"])
+    iv_policy_rows = _policy_rows([p for p in summary.policy_compliance if p.policy_group == "input_validation"])
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -158,6 +226,10 @@ def write_html_report(summary: ScanSummary, output_path: Path) -> None:
     .sev-high {{ color: #b42318; }}
     .sev-medium {{ color: #b54708; }}
     .sev-low {{ color: #175cd3; }}
+    .pol-pass {{ color: #067647; font-weight: 700; text-transform: uppercase; }}
+    .pol-fail {{ color: #b42318; font-weight: 700; text-transform: uppercase; }}
+    .pol-warn {{ color: #b54708; font-weight: 700; text-transform: uppercase; }}
+    .pol-manual {{ color: #6941c6; font-weight: 700; text-transform: uppercase; }}
     code {{ font-size: 0.9rem; }}
   </style>
 </head>
@@ -169,6 +241,25 @@ def write_html_report(summary: ScanSummary, output_path: Path) -> None:
     <div class="card"><div>By severity</div><ul>{severity_items or "<li>None</li>"}</ul></div>
     <div class="card"><div>By category</div><ul>{category_items or "<li>None</li>"}</ul></div>
   </div>
+  <h2>Secret Management Policies</h2>
+  <table>
+    <thead><tr><th>#</th><th>Policy</th><th>Status</th><th>Violations</th><th>Details</th></tr></thead>
+    <tbody>{secret_policy_rows or "<tr><td colspan='5'>No policy data.</td></tr>"}</tbody>
+  </table>
+  <h2>Input Validation Policies</h2>
+  <table>
+    <thead><tr><th>#</th><th>Policy</th><th>Status</th><th>Violations</th><th>Details</th></tr></thead>
+    <tbody>{iv_policy_rows or "<tr><td colspan='5'>No policy data.</td></tr>"}</tbody>
+  </table>
+  <h2>NTT Pre-Snyk Code Security Validation Checklist</h2>
+  <p class="meta">PASS: {sum(1 for p in summary.policy_compliance if p.policy_group == "ntt_checklist" and p.status == "pass")}
+     &middot; FAIL: {sum(1 for p in summary.policy_compliance if p.policy_group == "ntt_checklist" and p.status == "fail")}
+     &middot; MANUAL: {sum(1 for p in summary.policy_compliance if p.policy_group == "ntt_checklist" and p.status == "manual")}</p>
+  <table>
+    <thead><tr><th>#</th><th>Checklist Item</th><th>Status</th><th>Findings</th><th>Details</th></tr></thead>
+    <tbody>{_policy_rows([p for p in summary.policy_compliance if p.policy_group == "ntt_checklist"]) or "<tr><td colspan='5'>No checklist data.</td></tr>"}</tbody>
+  </table>
+  <h2>Findings</h2>
   <table>
     <thead>
       <tr>

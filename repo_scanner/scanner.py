@@ -25,6 +25,7 @@ class ScanOptions:
     keep_clone: bool = False
     filter_severity: str | None = None
     filter_category: str | None = None
+    filter_policy: str | None = None
     file_pattern: str | None = None
     html_report: bool = True
     json_report: bool = True
@@ -91,7 +92,7 @@ def scan_repository(options: ScanOptions) -> ScanOutcome:
     """Clone or open a repository, run static analysis, and produce reports."""
     repo, scan_path, repo_url, temp_dir = _resolve_scan_target(options)
 
-    findings, files_scanned = scan_directory(scan_path)
+    findings, files_scanned, policy_compliance, vault_integrations, validation_integrations = scan_directory(scan_path)
     findings = apply_severity_threshold(findings, options.severity_threshold)
 
     summary = build_summary(
@@ -99,13 +100,17 @@ def scan_repository(options: ScanOptions) -> ScanOutcome:
         repo_url=repo_url,
         repo_path=str(scan_path),
         files_scanned=files_scanned,
+        policy_compliance=policy_compliance,
+        vault_integrations=vault_integrations,
+        validation_integrations=validation_integrations,
     )
 
-    if options.filter_severity or options.filter_category or options.file_pattern:
+    if options.filter_severity or options.filter_category or options.filter_policy or options.file_pattern:
         filtered = filter_findings(
             summary,
             severity=options.filter_severity,
             category=options.filter_category,
+            policy=options.filter_policy,
             file_pattern=options.file_pattern,
         )
         summary = build_summary(
@@ -113,6 +118,9 @@ def scan_repository(options: ScanOptions) -> ScanOutcome:
             repo_url=repo_url,
             repo_path=str(scan_path),
             files_scanned=files_scanned,
+            policy_compliance=policy_compliance,
+            vault_integrations=vault_integrations,
+            validation_integrations=validation_integrations,
         )
 
     if repo:
