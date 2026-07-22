@@ -24,7 +24,7 @@ import pickle
 import subprocess
 
 password = "SuperSecretPython1!"
-api_key = "YOUR_STRIPE_TEST_KEY_HERE"
+api_key = "FAKE_STRIPE_KEY_FOR_TESTING_ONLY_DO_NOT_USE"
 
 def run_query(user_input):
     query = f"SELECT * FROM users WHERE name = '{user_input}'"
@@ -49,7 +49,7 @@ using Microsoft.AspNetCore.Mvc;
 public class VulnerableController : Controller
 {
     private const string password = "SuperSecretCsharp1!";
-    private const string api_key = "YOUR_STRIPE_TEST_KEY_HERE";
+    private const string api_key = "FAKE_STRIPE_KEY_FOR_TESTING_ONLY_DO_NOT_USE";
 
     [HttpGet]
     public IActionResult Run(string userId, string path, string url)
@@ -193,7 +193,7 @@ class LanguageSupportTests(unittest.TestCase):
                         "type": "python",
                         "env": {
                             "password": "LaunchSecretPass99",
-                            "api_key": "YOUR_STRIPE_TEST_KEY_HERE",
+                            "api_key": "FAKE_STRIPE_KEY_FOR_TESTING_ONLY_DO_NOT_USE",
                         },
                     }],
                 }),

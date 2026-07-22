@@ -13,7 +13,7 @@ import os
 import pickle
 import subprocess
 
-API_KEY = "YOUR_STRIPE_TEST_KEY_HERE"
+API_KEY = "this_is_a_fake_stripe_key_for_tests_onl"
 password = "SuperSecret123!"
 client_secret = "oauth_secret_value_here_12345"
 
