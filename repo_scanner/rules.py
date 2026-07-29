@@ -26,7 +26,67 @@ PLACEHOLDER_VALUES = re.compile(
     r"\*{3,}|<[^>]+>|\$\{[^}]+\}|%s|%d|process\.env\.|os\.environ|getenv\()",
 )
 
+# For injection rules, format markers (%s, ${...}) are signals of risk, not placeholders.
+PLACEHOLDER_VALUES_NON_INJECTION = re.compile(
+    r"(?i)(example|sample|placeholder|changeme|your[_-]?|xxx+|dummy|fake|test[_-]?key|"
+    r"not[_-]?a[_-]?real|insert[_-]?here|todo|fixme|redacted|null|none|undefined|"
+    r"\*{3,}|<[^>]+>|process\.env\.|os\.environ|getenv\()",
+)
+
 COMMENT_PREFIXES = ("#", "//", "/*", "*", "<!--", "--")
+
+# Dynamic SQL construction: interpolated f-string / concat with non-literal / % / .format / templates.
+# Intentionally does NOT match static string args or parameterized calls like execute("...%s", params).
+_SQL_DYNAMIC_ARG = (
+    r"(?:"
+    r"f['\"][^'\"\n]{0,400}\{|"                     # Python f-string with interpolation
+    r"\$\"[^\"]{0,400}\{|"                          # C# interpolated string with { }
+    r"[\"'][^\"'\n]{0,400}[\"']\s*\+\s*(?![\"'])|"  # "sql" + variable (not another literal)
+    r"[\"'][^\"'\n]{0,400}[\"']\s*%\s*(?:\(|[A-Za-z_\"'])|"  # "sql" % value
+    r"[\"'][^\"'\n]{0,400}[\"']\s*\.format\s*\(|"  # "sql".format(
+    r"`[^`\n]{0,400}\$\{"                           # JS/TS template with ${
+    r")"
+)
+
+# Structural SQL (reduces English-text FPs like 'Please SELECT your option').
+_SQL_STMT = (
+    r"(?:"
+    r"SELECT\s+.+?\s+FROM|"
+    r"INSERT\s+INTO|"
+    r"UPDATE\s+\w+\s+SET|"
+    r"DELETE\s+FROM|"
+    r"DROP\s+(?:TABLE|INDEX|DATABASE|VIEW|SCHEMA)"
+    r")"
+)
+
+# SQL statement present in a dynamically built string (assignment or inline).
+_SQL_KEYWORD_DYNAMIC = (
+    r"(?:"
+    + _SQL_STMT
+    + r".{0,400}?"
+    + r"(?:"
+    + r"[\"']\s*\+\s*(?![\"'\s])|"           # "... " + variable
+    + r"\{[^}]*\}\s*[\"']\s*\.format\s*\(|"  # "{}".format( / "{0}".format(
+    + r"[\"']\s*%\s*(?:\(|[A-Za-z_])|"       # "..." % value
+    + r"\$\{|"                               # ${interp}
+    + r"string\.Format\s*\("
+    + r")"
+    + r"|"
+    # string.Format("SELECT ... FROM ...", ...) — Format call before SQL text
+    + r"string\.Format\s*\(\s*[\"'][^\"'\n]{0,400}"
+    + _SQL_STMT
+    + r"|"
+    # f-string / C# $"..." with SQL and interpolation (allow nested quotes)
+    + r"f\"(?=[^\"]*\{)[^\"]{0,400}"
+    + _SQL_STMT
+    + r"|"
+    + r"f'(?=[^']*\{)[^']{0,400}"
+    + _SQL_STMT
+    + r"|"
+    + r"\$\"(?=[^\"]*\{)[^\"]{0,400}"
+    + _SQL_STMT
+    + r")"
+)
 
 
 def _rule(
@@ -41,6 +101,7 @@ def _rule(
     extensions: frozenset[str] | None = None,
     policy: str | None = None,
     flags: int = re.IGNORECASE,
+    exclude_line_patterns: tuple[str, ...] = (),
 ) -> SecurityRule:
     return SecurityRule(
         id=rule_id,
@@ -52,6 +113,7 @@ def _rule(
         remediation=remediation,
         extensions=extensions,
         policy=policy,
+        exclude_line_patterns=tuple(re.compile(p, flags) for p in exclude_line_patterns),
     )
 
 
@@ -81,37 +143,57 @@ SECURITY_RULES: list[SecurityRule] = [
     # Secret/credential detection is handled by SECRET_POLICY_RULES in secret_policies.py
 
     # --- Injection ---
+    # Require dynamic SQL construction (f-string, concat with non-literal, %, .format, template).
+    # Does not flag parameterized calls (execute("...?", params)) or static string SQL.
     _rule(
         "injection/sql-concat",
         "SQL Injection",
         "injection",
         "high",
-        r"(?i)(?:execute|query|rawQuery|raw)\s*\(\s*(?:f?['\"]|['\"].*\+|.*\.format\(|.*%s|.*\$\{)",
+        r"(?i)\b(?:execute(?:many)?|rawQuery|raw|query)\s*\(\s*" + _SQL_DYNAMIC_ARG,
         "SQL statement built via string concatenation or formatting may allow SQL injection.",
         "Use parameterized queries or an ORM with bound parameters.",
         extensions=frozenset({
             ".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".java", ".php", ".rb", ".go", ".cs",
         }),
+        exclude_line_patterns=(
+            # EF Core parameterized FromSqlRaw("...{0}", arg) — format slots with bound args
+            r"FromSqlRaw\s*\(\s*[\"'][^\"']*[\"']\s*,",
+            # Clearly parameterized: placeholder in string + trailing args list/tuple
+            r"(?:execute(?:many)?|query|rawQuery|raw)\s*\(\s*[\"'][^\"']*(?:\?|%s|\$\d+|:\w+|@\w+)[^\"']*[\"']\s*,",
+        ),
     ),
     _rule(
         "injection/sql-format",
         "SQL Injection via Formatting",
         "injection",
         "high",
-        r"(?i)(?:SELECT|INSERT|UPDATE|DELETE|DROP)\s+.*(?:\+|\.format\(|f['\"]|%s|\$\{|string\.Format)",
+        r"(?i)" + _SQL_KEYWORD_DYNAMIC,
         "Dynamic SQL constructed with user-controlled formatting.",
         "Use prepared statements; never interpolate untrusted input into SQL.",
         extensions=ALL_CODE_EXTENSIONS,
+        exclude_line_patterns=(
+            # Parameterized execute/query with bound arguments after the SQL string
+            r"(?:execute(?:many)?|query|rawQuery|raw|prepare|prepareStatement)\s*\(\s*[\"'][^\"']*[\"']\s*,",
+            r"FromSqlRaw\s*\(\s*[\"'][^\"']*[\"']\s*,",
+            r"FromSqlInterpolated\s*\(",
+        ),
     ),
     _rule(
         "injection/csharp-sql-concat",
         "SQL Injection (C# string concat)",
         "injection",
         "high",
-        r"(?i)(?:SqlCommand|ExecuteReader|ExecuteNonQuery|ExecuteScalar|FromSqlRaw)\s*\(\s*[^)]*(?:\+|string\.Format|\$\")",
+        r"(?i)(?:SqlCommand|ExecuteReader|ExecuteNonQuery|ExecuteScalar|FromSqlRaw|ExecuteSqlRaw(?:Async)?)"
+        r"\s*\(\s*[^)]*(?:\+\s*(?![\"'])|string\.Format|\$\")",
         "SQL command built with string concatenation or formatting may allow SQL injection.",
         "Use parameterized SqlParameter values or EF Core parameterized FromSqlInterpolated.",
         extensions=CSHARP_EXTENSIONS,
+        exclude_line_patterns=(
+            r"FromSqlInterpolated\s*\(",
+            # Parameterized FromSqlRaw with composite format and bound args
+            r"FromSqlRaw\s*\(\s*[\"'][^\"']*[\"']\s*,",
+        ),
     ),
     _rule(
         "injection/command-exec",

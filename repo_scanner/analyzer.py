@@ -17,7 +17,13 @@ from .input_validation_analyzer import analyze_file_context, build_server_valida
 from .input_validation_policies import INPUT_VALIDATION_RULES
 from .policy_evaluator import build_vault_gap_finding, evaluate_all_policies
 from .checklist_rules import CHECKLIST_RULES, assign_policy_to_base_rules
-from .rules import COMMENT_PREFIXES, PLACEHOLDER_VALUES, SECURITY_RULES, SecurityRule
+from .rules import (
+    COMMENT_PREFIXES,
+    PLACEHOLDER_VALUES,
+    PLACEHOLDER_VALUES_NON_INJECTION,
+    SECURITY_RULES,
+    SecurityRule,
+)
 from .secret_policies import CERTIFICATE_EXTENSIONS, SECRET_POLICY_RULES, SECRET_VIOLATION_POLICIES
 from .validation_detector import detect_validation_integrations, file_uses_external_input
 from .vault_detector import detect_vault_integrations
@@ -58,7 +64,13 @@ def _is_test_file(relative_file: str) -> bool:
 def _is_false_positive(line: str, match_text: str, rule: SecurityRule, relative_file: str) -> bool:
     if _is_comment_line(line):
         return True
-    if PLACEHOLDER_VALUES.search(match_text):
+    # Injection rules: do not treat %s / ${...} as benign placeholders (they indicate risk).
+    placeholder = (
+        PLACEHOLDER_VALUES_NON_INJECTION
+        if rule.category in {"injection", "command_injection"}
+        else PLACEHOLDER_VALUES
+    )
+    if placeholder.search(match_text):
         return True
     if re.search(r"(?i)(example\.com|localhost|127\.0\.0\.1|0\.0\.0\.0|test@|foo@bar)", match_text):
         return True
