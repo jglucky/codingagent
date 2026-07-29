@@ -121,6 +121,45 @@ _CSHARP_PATH_TRAVERSAL = (
     + r")"
 )
 
+# Command injection: first arg is dynamic/variable/user-controlled — not a list or pure string literal.
+_CMD_UNSAFE_ARG = (
+    r"(?:"
+    r"f['\"`]|"  # Python f-string
+    r"\$\"|"  # C# interpolated string
+    r"[\"'][^\"'\n]{0,300}[\"']\s*\+\s*(?![\"'])|"  # "cmd" + variable
+    r"[\"'][^\"'\n]{0,300}[\"']\s*%\s*(?:\(|[A-Za-z_])|"  # "cmd" % value
+    r"[\"'][^\"'\n]{0,300}[\"']\s*\.format\s*\(|"  # "cmd".format(
+    r"`[^`\n]{0,300}\$\{|"  # JS/TS template with ${
+    r"req\.|request\.|params\.|query\.|body\.|args\.|"
+    r"\$_(?:GET|POST|REQUEST)\b|"
+    # Variable / call / expression — not a list [...] or a bare string literal
+    r"(?!\[)[A-Za-z_(\{]"
+    r")"
+)
+# Word-boundary per alternative: leading \b would block ".execSync" after ")" (non-word to non-word).
+_CMD_EXEC_APIS = (
+    r"(?:"
+    r"\bos\.system|\bos\.popen|"
+    r"\bsubprocess\.(?:call|run|Popen|check_output|check_call)|"
+    r"\bchild_process\.exec(?:Sync)?|"
+    # require("child_process").execSync(...) — no leading \b (dot is non-word)
+    r"\.execSync\b|"
+    # Bare eval/exec (not obj.exec / regex.exec); fixed prior exec\(|eval\( double-paren bug
+    r"(?<![\w.])(?:eval|exec)\b"
+    r")"
+)
+# Process.Start with concat, interpolation, or request/user signals (not Process.Start("notepad")).
+_CSHARP_PROCESS_UNSAFE = (
+    r"(?:"
+    r"\+\s*(?![\"'])|"  # "/c " + userId
+    r"string\.Format\s*\(|"
+    r"\$\"|"
+    r"Request\.|HttpContext\.|"
+    r"\[From(?:Query|Route|Form|Body)\]|"
+    r"\buserInput\b|\buserCommand\b|\buserId\b|\bcommand\b"
+    r")"
+)
+
 
 def _rule(
     rule_id: str,
@@ -228,35 +267,49 @@ SECURITY_RULES: list[SecurityRule] = [
             r"FromSqlRaw\s*\(\s*[\"'][^\"']*[\"']\s*,",
         ),
     ),
+    # Require an unsafe/dynamic command argument. Safe list form and pure string literals are skipped.
     _rule(
         "injection/command-exec",
         "Command Injection",
         "command_injection",
         "high",
-        r"(?i)\b(?:os\.system|os\.popen|subprocess\.(?:call|run|Popen)|exec\(|eval\(|child_process\.exec)\s*\(",
+        r"(?i)" + _CMD_EXEC_APIS + r"\s*\(\s*" + _CMD_UNSAFE_ARG,
         "Shell command execution detected; may be vulnerable to command injection.",
         "Avoid shell execution; use safe APIs with argument lists and validate all inputs.",
         extensions=frozenset({".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".rb", ".php", ".sh"}),
+        exclude_line_patterns=(
+            # Explicit safe list + shell=False (or no shell) — first arg is a list
+            r"subprocess\.(?:call|run|Popen|check_output|check_call)\s*\(\s*\[",
+            r"child_process\.execFile\s*\(",
+            r"child_process\.spawn\s*\(",
+        ),
     ),
+    # Keyword-arg context only; case-sensitive so "SHELL = True" / prose strings don't match.
     _rule(
         "injection/shell-true",
         "Shell Execution Enabled",
         "command_injection",
         "high",
-        r"(?i)shell\s*=\s*True",
+        r"(?:,|\()\s*shell\s*=\s*True\b",
         "subprocess invoked with shell=True enables command injection.",
         "Pass arguments as a list and set shell=False.",
         extensions=PYTHON_EXTENSIONS,
+        flags=0,
     ),
+    # Only Process.Start with concat / interpolation / request or user signals — not every ProcessStartInfo.
     _rule(
         "injection/csharp-process-start",
         "Command Injection (Process.Start)",
         "command_injection",
         "high",
-        r"(?i)\b(?:Process\.Start|ProcessStartInfo)\s*\(",
+        r"(?i)\bProcess\.Start\s*\(\s*[^)]*" + _CSHARP_PROCESS_UNSAFE,
         "Process execution detected; may be vulnerable to command injection if arguments are user-controlled.",
         "Avoid shell execution; use ProcessStartInfo with explicit FileName/Arguments and validate all inputs.",
         extensions=CSHARP_EXTENSIONS,
+        exclude_line_patterns=(
+            # Pure string literals only (no concat +, no $" interpolation, no { })
+            r"Process\.Start\s*\(\s*@?[\"'][^\"'$+{]*[\"']\s*(?:,\s*@?[\"'][^\"'$+{]*[\"']\s*)?\)",
+        ),
     ),
 
     # --- XSS ---
