@@ -88,6 +88,39 @@ _SQL_KEYWORD_DYNAMIC = (
     + r")"
 )
 
+# Path traversal: strong external-input signals only (not bare path / fileName / input_file).
+_USER_PATH_INPUT = (
+    r"(?:"
+    r"req\.|request\.|params\.|query\.|body\.|"
+    r"\$_(?:GET|POST|REQUEST)\b|"
+    r"\binput\b"  # Python input() / whole-word input, not input_file
+    r")"
+)
+_CSHARP_FILE_API = (
+    r"\b(?:File\.(?:Open|OpenRead|OpenText|ReadAllText|ReadAllBytes|WriteAllText|WriteAllBytes|Copy|Move|Delete)|"
+    r"FileStream|StreamReader|Directory\.(?:GetFiles|EnumerateFiles))\s*\("
+)
+_CSHARP_PATH_INPUT = (
+    r"(?:"
+    r"Request\.|HttpContext\.|"
+    r"\[From(?:Query|Route|Form|Body)\]|"
+    r"\bqueryString\b|\buserInput\b"
+    r")"
+)
+# File API and user-input signal on the same line, either order
+# (covers expression-bodied actions: Get([FromQuery] string f) => File.ReadAllText(f)).
+_CSHARP_PATH_TRAVERSAL = (
+    r"(?:"
+    + _CSHARP_FILE_API
+    + r".{0,240}?"
+    + _CSHARP_PATH_INPUT
+    + r"|"
+    + _CSHARP_PATH_INPUT
+    + r".{0,240}?"
+    + _CSHARP_FILE_API
+    + r")"
+)
+
 
 def _rule(
     rule_id: str,
@@ -249,27 +282,37 @@ SECURITY_RULES: list[SecurityRule] = [
     ),
 
     # --- Path traversal ---
+    # Require a strong external-input signal in the same call. Do not match bare names like
+    # input_file, Path.Combine, or File.ReadAllText(path) local variables.
     _rule(
         "traversal/user-path",
         "Path Traversal Risk",
         "path_traversal",
         "medium",
-        r"(?i)(?:open|readFile|readFileSync|sendFile|createReadStream|FileInputStream)\s*\([^)]*(?:req\.|request\.|params\.|query\.|body\.|input)",
+        r"(?i)(?:open|readFile|readFileSync|sendFile|createReadStream|FileInputStream)\s*\([^)]*"
+        + _USER_PATH_INPUT,
         "File operation may use user-controlled paths without validation.",
         "Canonicalize paths and restrict file access to an allowed base directory.",
         extensions=frozenset({".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".java", ".php", ".go", ".rb"}),
+        exclude_line_patterns=(
+            # String-literal-only file ops (no dynamic path)
+            r"(?:open|readFile|readFileSync|sendFile|createReadStream|FileInputStream)\s*\(\s*[\"'][^\"']*[\"']\s*[,)]",
+        ),
     ),
     _rule(
         "traversal/csharp-file",
         "Path Traversal Risk (C# File APIs)",
         "path_traversal",
         "medium",
-        r"(?i)\b(?:File\.(?:Open|OpenRead|OpenText|ReadAllText|ReadAllBytes|WriteAllText|WriteAllBytes|Copy|Move|Delete)|"
-        r"FileStream|StreamReader|Directory\.(?:GetFiles|EnumerateFiles))\s*\([^)]*"
-        r"(?:Request\.|HttpContext\.|\[From(?:Query|Route|Form)\]|queryString|userInput|fileName|filePath|path)",
+        r"(?i)" + _CSHARP_PATH_TRAVERSAL,
         "C# file operation may use user-controlled paths without validation.",
         "Canonicalize with Path.GetFullPath and restrict access to an allowed base directory.",
         extensions=CSHARP_EXTENSIONS,
+        exclude_line_patterns=(
+            # File API whose first argument is a string/verbatim/interpolated literal only
+            r"(?:File\.(?:Open|OpenRead|OpenText|ReadAllText|ReadAllBytes|WriteAllText|WriteAllBytes|Copy|Move|Delete)|"
+            r"FileStream|StreamReader|Directory\.(?:GetFiles|EnumerateFiles))\s*\(\s*@?\$?[\"'][^\"']*[\"']\s*[,)]",
+        ),
     ),
 
     # --- Deserialization ---
