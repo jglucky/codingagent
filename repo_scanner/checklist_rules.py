@@ -9,6 +9,8 @@ from .rules import (
     JAVASCRIPT_EXTENSIONS,
     PYTHON_EXTENSIONS,
     SecurityRule,
+    _DYN_CODE_EXEC,
+    _DYN_CODE_PY_EXEC,
     _rule,
 )
 
@@ -255,17 +257,43 @@ CHECKLIST_RULES: list[SecurityRule] = [
         extensions=ALL_CODE_EXTENSIONS,
         policy="deprecated_apis",
     ),
+    # Require dynamic/non-literal input. Skips: function() decls, regex.exec, pure string
+    # literals, Activator.CreateInstance (ubiquitous DI), and shell child_process.exec.
     _rule(
         "secure/eval-exec",
         "Dynamic Code Execution",
         "security",
         "high",
-        r"(?i)\b(?:eval|exec|Function)\s*\(|\bCompileAssemblyFromSource\s*\(|"
-        r"\bAssembly\.Load\s*\(|\bActivator\.CreateInstance\s*\(",
+        r"(?i)" + _DYN_CODE_EXEC,
         "Dynamic code execution can enable remote code execution if input is untrusted.",
         "Avoid eval/exec/dynamic assembly load on untrusted input.",
         extensions=ALL_CODE_EXTENSIONS,
         policy="deprecated_apis",
+        exclude_line_patterns=(
+            r"literal_eval\s*\(",
+            r"(?<!\w)eval\s*\(\s*[\"'][^\"']*[\"']\s*\)",
+            r"\bnew\s+Function\s*\(\s*[\"'][^\"']*[\"']\s*\)",
+            # Prose / messages that mention eval(...) inside a string
+            r"""[=:]\s*[\"'].*\beval\s*\(""",
+            r"""^\s*[\"'].*\beval\s*\(""",
+        ),
+    ),
+    _rule(
+        "secure/py-exec",
+        "Dynamic Code Execution",
+        "security",
+        "high",
+        r"(?i)" + _DYN_CODE_PY_EXEC,
+        "Dynamic code execution can enable remote code execution if input is untrusted.",
+        "Avoid eval/exec/dynamic assembly load on untrusted input.",
+        extensions=PYTHON_EXTENSIONS,
+        policy="deprecated_apis",
+        exclude_line_patterns=(
+            r"literal_eval\s*\(",
+            r"(?<![\w.])exec\s*\(\s*[\"'][^\"']*[\"']\s*\)",
+            r"""[=:]\s*[\"'].*\bexec\s*\(""",
+            r"""^\s*[\"'].*\bexec\s*\(""",
+        ),
     ),
 ]
 

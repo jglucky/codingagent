@@ -70,14 +70,6 @@ class CommandInjectionTruePositives(unittest.TestCase):
         rules = _scan_source("app.py", "subprocess.check_output(cmd, shell=True)\n")
         self.assertIn("injection/shell-true", rules)
 
-    def test_eval_variable(self) -> None:
-        rules = _scan_source("app.py", "eval(user_code)\n")
-        self.assertIn("injection/command-exec", rules)
-
-    def test_exec_variable(self) -> None:
-        rules = _scan_source("app.py", "exec(user_code)\n")
-        self.assertIn("injection/command-exec", rules)
-
     def test_child_process_exec_req(self) -> None:
         rules = _scan_source("app.js", "child_process.exec(req.query.cmd)\n")
         self.assertIn("injection/command-exec", rules)

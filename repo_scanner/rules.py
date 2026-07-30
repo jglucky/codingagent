@@ -137,17 +137,57 @@ _CMD_UNSAFE_ARG = (
     r")"
 )
 # Word-boundary per alternative: leading \b would block ".execSync" after ")" (non-word to non-word).
+# Note: Python/JS eval|exec dynamic-code cases live in secure/eval-exec (checklist_rules), not here.
 _CMD_EXEC_APIS = (
     r"(?:"
     r"\bos\.system|\bos\.popen|"
     r"\bsubprocess\.(?:call|run|Popen|check_output|check_call)|"
     r"\bchild_process\.exec(?:Sync)?|"
     # require("child_process").execSync(...) — no leading \b (dot is non-word)
-    r"\.execSync\b|"
-    # Bare eval/exec (not obj.exec / regex.exec); fixed prior exec\(|eval\( double-paren bug
-    r"(?<![\w.])(?:eval|exec)\b"
+    r"\.execSync\b"
     r")"
 )
+
+# Dynamic code execution (eval/exec/new Function): non-literal / user-controlled first arg only.
+_DYN_CODE_UNSAFE_ARG = (
+    r"(?:"
+    r"f['\"`]|"
+    r"\$\"|"
+    r"[\"'][^\"'\n]{0,300}[\"']\s*\+\s*(?![\"'])|"
+    r"[\"'][^\"'\n]{0,300}[\"']\s*%\s*(?:\(|[A-Za-z_])|"
+    r"[\"'][^\"'\n]{0,300}[\"']\s*\.format\s*\(|"
+    r"`[^`\n]{0,300}\$\{|"
+    r"req\.|request\.|params\.|query\.|body\.|args\.|"
+    r"\$_(?:GET|POST|REQUEST)\b|"
+    r"Request\.|HttpContext\.|\[From|"
+    # Variable / call / expression — not a list or pure string literal
+    r"(?!\[)[A-Za-z_(\{]"
+    r")"
+)
+# Shared dynamic-code pattern (eval / new Function / C#). Python exec is separate
+# (PYTHON_EXTENSIONS only) so JS child_process destructured exec(...) is not
+# mislabeled as Dynamic Code Execution.
+_DYN_CODE_EXEC = (
+    r"(?:"
+    # eval: bare or attribute (window.eval / builtins.eval); not literal_eval
+    r"(?<!\w)eval\s*\(\s*"
+    + _DYN_CODE_UNSAFE_ARG
+    + r"|"
+    # JS Function constructor only - not function(x) { ... } declarations
+    r"\bnew\s+Function\s*\(\s*"
+    + _DYN_CODE_UNSAFE_ARG
+    + r"|"
+    r"\bCompileAssemblyFromSource\s*\(|"
+    r"\bCSharpScript\.(?:Evaluate|Run)(?:Async)?\s*\(\s*"
+    + _DYN_CODE_UNSAFE_ARG
+    + r"|"
+    # Assembly load from non-literal path/bytes (not every Activator.CreateInstance)
+    r"\bAssembly\.Load(?:From|File)?\s*\(\s*"
+    + _DYN_CODE_UNSAFE_ARG
+    + r")"
+)
+# Python builtin exec(code) only - not regex.exec / child_process.exec
+_DYN_CODE_PY_EXEC = r"(?<![\w.])exec\s*\(\s*" + _DYN_CODE_UNSAFE_ARG
 # Process.Start with concat, interpolation, or request/user signals (not Process.Start("notepad")).
 _CSHARP_PROCESS_UNSAFE = (
     r"(?:"
