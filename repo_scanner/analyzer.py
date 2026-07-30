@@ -39,6 +39,7 @@ TEST_FILE_MARKERS = (
 PASSWORD_TEST_SKIP_RULES = frozenset({
     "policy-1/password-assignment",
     "policy-1/password-in-object",
+    "policy-1/password-in-connection",
     "secret/generic-credential",
 })
 

@@ -87,6 +87,7 @@ def _policy_rule(
     *,
     extensions: frozenset[str] | None = None,
     flags: int = re.IGNORECASE,
+    exclude_line_patterns: tuple[str, ...] = (),
 ) -> SecurityRule:
     return SecurityRule(
         id=rule_id,
@@ -98,6 +99,7 @@ def _policy_rule(
         message=message,
         remediation=remediation,
         extensions=extensions,
+        exclude_line_patterns=tuple(re.compile(p, flags) for p in exclude_line_patterns),
     )
 
 
@@ -124,15 +126,35 @@ SECRET_POLICY_RULES: list[SecurityRule] = [
         "Remove plaintext passwords and retrieve credentials from a vault at runtime.",
         extensions=ALL_CODE_EXTENSIONS,
     ),
+    # Connection-string style only (Password=secret / PWD=secret).
+    # Must not match web-form code like:
+    #   password = driver.findElement(...)
+    #   comp.password = comp.confirmPassword = 'x'
+    #   WebElement password = driver.FindElement(...)
     _policy_rule(
         "policy-1/password-in-connection",
         "hardcoded_passwords",
         "Password in Connection String",
         "high",
-        r"(?i)(?:Password|PWD|passwd)\s*=\s*[^;'\")\s]{4,}",
+        # (?<![.\w]) — not property access (.password = ...)
+        # value is a plain token (no dots/parens) so code expressions do not match
+        r"(?i)(?<![.\w])(?:Password|PWD|passwd)\s*=\s*"
+        r"([^\s;\"'.)(\\]{4,})(?![\w.(])",
         "Password embedded in a connection string.",
         "Use managed identities or a vault-backed connection string provider.",
         extensions=ALL_CODE_EXTENSIONS,
+        exclude_line_patterns=(
+            # WebDriver / browser automation — locating password fields, not DB secrets
+            r"(?i)find[_]?element|FindElement|By\.(?:id|Id|name|Name|css|Css|xpath|XPath|className|ClassName)|"
+            r"querySelector|getElementById|getElementsBy|send[_]?keys|sendKeys|"
+            r"WebElement|IWebElement|\bdriver\.|\bpage\.|locator\(|"
+            r"\bBy\.(?:name|Name|id|Id)\s*\(|"
+            r"confirmPassword|passwordField|passwordInput|password_field|password_input|"
+            r"type\s*=\s*[\"']?password|@type\s*=\s*[\"']?password|"
+            r"input\[type\s*=\s*password|"
+            # CSS/XPath attribute selectors: [password=...], [pwd=...], [@password=...]
+            r"\[[^\]]*\b(?:password|pwd|passwd)\s*=",
+        ),
     ),
 
     # Policy 2: API keys
