@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .rules import ALL_CODE_EXTENSIONS, CONFIG_EXTENSIONS, SecurityRule, _rule
+from .rules import ALL_CODE_EXTENSIONS, CONFIG_EXTENSIONS, SecurityRule, _normalize_regex, _rule
 
 
 @dataclass(frozen=True)
@@ -89,6 +89,8 @@ def _policy_rule(
     flags: int = re.IGNORECASE,
     exclude_line_patterns: tuple[str, ...] = (),
 ) -> SecurityRule:
+    pattern = _normalize_regex(pattern, flags)
+    excludes = tuple(_normalize_regex(p, flags) for p in exclude_line_patterns)
     return SecurityRule(
         id=rule_id,
         title=title,
@@ -99,7 +101,7 @@ def _policy_rule(
         message=message,
         remediation=remediation,
         extensions=extensions,
-        exclude_line_patterns=tuple(re.compile(p, flags) for p in exclude_line_patterns),
+        exclude_line_patterns=tuple(re.compile(p, flags) for p in excludes),
     )
 
 

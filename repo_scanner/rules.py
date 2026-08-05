@@ -201,6 +201,46 @@ _CSHARP_PROCESS_UNSAFE = (
 )
 
 
+def _normalize_regex(pattern: str, flags: int) -> str:
+    """Avoid 'global flags not at the start' errors from mid-pattern (?i) etc.
+
+    When IGNORECASE (or other flags) is already applied via re.compile flags,
+    strip inline global flag groups. Also lift a leading inline flag into the
+    outer flags by removing duplicates that appear after position 0.
+    """
+    # Remove mid-expression inline global flags: (?i), (?im), etc.
+    # Keep lookarounds like (?!...), (?=...), (?<=...), (?<!...), (?:...)
+    def _strip_mid_global_flags(p: str) -> str:
+        out = []
+        i = 0
+        while i < len(p):
+            if p[i] == "(" and i + 2 < len(p) and p[i + 1] == "?":
+                # possible inline flag group (?imsux)
+                j = i + 2
+                flags_chars = ""
+                while j < len(p) and p[j] in "imsux":
+                    flags_chars += p[j]
+                    j += 1
+                if flags_chars and j < len(p) and p[j] == ")":
+                    # global flag group — drop it (outer re flags / case already handle it)
+                    i = j + 1
+                    continue
+            out.append(p[i])
+            i += 1
+        return "".join(out)
+
+    if flags & re.IGNORECASE or flags & re.MULTILINE or flags & re.DOTALL or flags & re.VERBOSE:
+        # Safe to strip all inline global flag groups
+        return _strip_mid_global_flags(pattern)
+    # No outer flags: keep a single leading (?i) if present; strip any later ones
+    if pattern.startswith("(?") and ")" in pattern[:8]:
+        # leave leading flag group; strip subsequent global flag groups
+        end = pattern.find(")")
+        head, tail = pattern[: end + 1], pattern[end + 1 :]
+        return head + _strip_mid_global_flags(tail)
+    return _strip_mid_global_flags(pattern)
+
+
 def _rule(
     rule_id: str,
     title: str,
@@ -215,6 +255,8 @@ def _rule(
     flags: int = re.IGNORECASE,
     exclude_line_patterns: tuple[str, ...] = (),
 ) -> SecurityRule:
+    pattern = _normalize_regex(pattern, flags)
+    excludes = tuple(_normalize_regex(p, flags) for p in exclude_line_patterns)
     return SecurityRule(
         id=rule_id,
         title=title,
@@ -225,7 +267,7 @@ def _rule(
         remediation=remediation,
         extensions=extensions,
         policy=policy,
-        exclude_line_patterns=tuple(re.compile(p, flags) for p in exclude_line_patterns),
+        exclude_line_patterns=tuple(re.compile(p, flags) for p in excludes),
     )
 
 
@@ -811,7 +853,7 @@ SECURITY_RULES: list[SecurityRule] = [
         "medium",
         r"(?:"
         r"\w+!!(?:\.|\[|\s*;|\s*\)|,|$)|"  # Kotlin !!
-        r"(?i)\.(?:FirstOrDefault|SingleOrDefault|Find|FindAsync)\s*\(\s*[^)]*\)\s*!"  # C# null-forgiving
+        r"\.(?:FirstOrDefault|SingleOrDefault|Find|FindAsync)\s*\(\s*[^)]*\)\s*!"  # C# null-forgiving (rule is IGNORECASE)
         r"|\.unwrap\s*\(\s*\)"  # Rust
         r")",
         "Force-unwrapping a possibly null/None value can crash on null (CWE-476).",
