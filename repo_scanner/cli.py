@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .github import GitHubCloneError
 from .scanner import ScanOptions, scan_repository
+from .vuln_types import format_checks_help, resolve_vuln_types
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -17,6 +18,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Self-contained static application security testing (SAST) tool. "
             "Clone a GitHub repository or scan a local directory to detect "
             "hardcoded secrets, exposed credentials, injection flaws, and other code vulnerabilities."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "selective scan examples:\n"
+            "  repo-scanner snyk/goof --only dos\n"
+            "  repo-scanner --local-path . --only null_pointer\n"
+            "  repo-scanner my/repo --only secrets,sql_injection,xss\n"
+            "  repo-scanner --list-checks\n"
         ),
     )
     parser.add_argument(
@@ -49,6 +58,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="GitHub token for private repos (or set GITHUB_TOKEN)",
     )
     parser.add_argument(
+        "--only",
+        "--check",
+        dest="only_types",
+        nargs="+",
+        metavar="TYPE",
+        help=(
+            "Run only these vulnerability checks (space- or comma-separated). "
+            "Examples: dos, null_pointer, secrets, sql_injection, xss, path_traversal. "
+            "Use --list-checks for the full list and aliases."
+        ),
+    )
+    parser.add_argument(
+        "--list-checks",
+        action="store_true",
+        help="List vulnerability types available for --only / --check and exit",
+    )
+    parser.add_argument(
         "--severity-threshold",
         choices=["low", "medium", "high"],
         help="Only report issues at this severity or higher",
@@ -66,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
             "authentication", "authorization", "input_validation", "csrf",
             "denial_of_service", "null_pointer",
         ],
-        help="Filter displayed results to a category",
+        help="Filter displayed results to a category (post-scan filter; prefer --only to run fewer rules)",
     )
     parser.add_argument(
         "--filter-policy",
@@ -101,10 +127,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if args.list_checks:
+        print(format_checks_help())
+        return 0
+
     if not args.repo and not args.local_path:
         parser.error("Provide a GitHub repository or --local-path")
 
     depth = None if args.depth == 0 else args.depth
+
+    only_types = list(args.only_types) if args.only_types else None
+    if only_types:
+        try:
+            resolved = resolve_vuln_types(only_types)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(
+            "Selective scan: "
+            + ", ".join(f"{s.id} ({s.title})" for s in resolved),
+            file=sys.stderr,
+        )
 
     options = ScanOptions(
         repo=args.repo,
@@ -121,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         file_pattern=args.file_pattern,
         html_report=not args.no_html,
         json_report=not args.no_json,
+        only_types=only_types,
     )
 
     try:

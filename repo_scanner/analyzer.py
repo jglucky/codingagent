@@ -27,6 +27,7 @@ from .rules import (
 from .secret_policies import CERTIFICATE_EXTENSIONS, SECRET_POLICY_RULES, SECRET_VIOLATION_POLICIES
 from .validation_detector import detect_validation_integrations, file_uses_external_input
 from .vault_detector import detect_vault_integrations
+from .vuln_types import finding_matches_types, select_rules_for_types
 
 
 MAX_LINE_LENGTH = 2000
@@ -227,16 +228,25 @@ def scan_directory(
     *,
     rules: list[SecurityRule] | None = None,
     include_general_rules: bool = True,
+    only_types: list[str] | tuple[str, ...] | None = None,
 ) -> tuple[list[Finding], int, list[PolicyCompliance], list[str], list[str]]:
-    """Scan all files under root and return findings, policy compliance, and integrations."""
+    """Scan all files under root and return findings, policy compliance, and integrations.
+
+    only_types: optional vulnerability type names/aliases (e.g. ``dos``, ``null_pointer``).
+    When set, only matching detection rules and related repo-level checks run.
+    """
     root = root.resolve()
-    active_rules = list(SECRET_POLICY_RULES) + list(INPUT_VALIDATION_RULES)
-    if include_general_rules:
-        active_rules.extend(assign_policy_to_base_rules(SECURITY_RULES))
-        active_rules.extend(CHECKLIST_RULES)
+    selected_types = list(only_types) if only_types else []
 
     if rules is not None:
         active_rules = rules
+    elif selected_types:
+        active_rules = select_rules_for_types(selected_types)
+    else:
+        active_rules = list(SECRET_POLICY_RULES) + list(INPUT_VALIDATION_RULES)
+        if include_general_rules:
+            active_rules.extend(assign_policy_to_base_rules(SECURITY_RULES))
+            active_rules.extend(CHECKLIST_RULES)
 
     seen: set[str] = set()
     all_findings: list[Finding] = []
@@ -290,8 +300,8 @@ def scan_directory(
         except OSError:
             pass
 
-    # Repo-level: lockfile missing when dependency manifests exist
-    if manifest_files and not lock_files:
+    # Repo-level: lockfile missing when dependency manifests exist (full scan only)
+    if not selected_types and manifest_files and not lock_files:
         fingerprint = make_fingerprint("deps/missing-lockfile", "(repository)", None, "lock")
         if fingerprint not in seen:
             seen.add(fingerprint)
@@ -317,8 +327,17 @@ def scan_directory(
                 ),
             ))
 
-    # Repo-level: API routes without any rate-limit middleware evidence
-    if api_route_seen and not rate_limit_seen:
+    # Repo-level: API routes without rate-limit evidence (full scan or DoS type)
+    run_rate_limit_check = (
+        not selected_types
+        or finding_matches_types(
+            rule_id="api/no-rate-limit",
+            category="security",
+            policy="rate_limiting",
+            type_names=selected_types,
+        )
+    )
+    if run_rate_limit_check and api_route_seen and not rate_limit_seen:
         fingerprint = make_fingerprint("api/no-rate-limit", "(repository)", None, "rate")
         if fingerprint not in seen:
             seen.add(fingerprint)
@@ -349,19 +368,51 @@ def scan_directory(
     vault_names = sorted({v.name for v in vault_integrations})
     validation_names = sorted({v.name for v in validation_integrations})
 
-    secret_violation_count = sum(
-        1 for f in all_findings if f.policy in SECRET_VIOLATION_POLICIES
+    run_vault_gap = (
+        not selected_types
+        or finding_matches_types(
+            rule_id="policy-8/no-vault",
+            category="secrets",
+            policy="vault_management",
+            type_names=selected_types,
+        )
     )
-    gap = build_vault_gap_finding(vault_integrations, secret_violation_count)
-    if gap:
-        all_findings.append(gap)
+    if run_vault_gap:
+        secret_violation_count = sum(
+            1 for f in all_findings if f.policy in SECRET_VIOLATION_POLICIES
+        )
+        gap = build_vault_gap_finding(vault_integrations, secret_violation_count)
+        if gap:
+            all_findings.append(gap)
 
-    iv_violation_count = sum(1 for f in all_findings if f.category == "input_validation")
-    server_gap = build_server_validation_gap_finding(
-        validation_integrations, external_input_files, iv_violation_count,
+    run_iv_gap = (
+        not selected_types
+        or finding_matches_types(
+            rule_id="iv-2/file-no-server-validation",
+            category="input_validation",
+            policy="server_side_validation",
+            type_names=selected_types,
+        )
     )
-    if server_gap:
-        all_findings.append(server_gap)
+    if run_iv_gap:
+        iv_violation_count = sum(1 for f in all_findings if f.category == "input_validation")
+        server_gap = build_server_validation_gap_finding(
+            validation_integrations, external_input_files, iv_violation_count,
+        )
+        if server_gap:
+            all_findings.append(server_gap)
+
+    # Drop any residual findings outside the selected types (context/repo extras).
+    if selected_types:
+        all_findings = [
+            f for f in all_findings
+            if finding_matches_types(
+                rule_id=f.rule_id,
+                category=f.category,
+                policy=f.policy,
+                type_names=selected_types,
+            )
+        ]
 
     policy_compliance = evaluate_all_policies(
         all_findings, vault_integrations, validation_integrations, external_input_files,

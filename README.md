@@ -87,15 +87,17 @@ python scan.py --local-path C:\projects\my-app
 # Only high-severity issues
 python scan.py snyk/goof --severity-threshold high
 
-# Filter to a specific policy
+# Run only selected vulnerability types (does not load the full rule set)
+python scan.py snyk/goof --only dos
+python scan.py snyk/goof --only null_pointer
+python scan.py --local-path C:\projects\my-app --only secrets sql_injection
+python scan.py snyk/goof --only secrets,xss,path_traversal
+python scan.py --list-checks
+
+# Filter displayed results after a full scan (prefer --only to run fewer rules)
 python scan.py snyk/goof --filter-policy hardcoded_passwords
 python scan.py snyk/goof --filter-policy api_keys
-python scan.py snyk/goof --filter-policy file_upload_validation
-python scan.py snyk/goof --filter-policy allowlist_validation
 python scan.py snyk/goof --filter-category denial_of_service
-python scan.py snyk/goof --filter-policy denial_of_service
-python scan.py snyk/goof --filter-category null_pointer
-python scan.py snyk/goof --filter-policy null_pointer
 
 # Private repository
 python scan.py your-org/private-repo --github-token $env:GITHUB_TOKEN
@@ -155,6 +157,7 @@ False-positive reduction skips:
 usage: repo-scanner [-h] [--local-path LOCAL_PATH] [--branch BRANCH]
                     [--depth DEPTH] [--output-dir OUTPUT_DIR]
                     [--github-token GITHUB_TOKEN]
+                    [--only TYPE [TYPE ...]] [--list-checks]
                     [--severity-threshold {low,medium,high}]
                     [--filter-severity {low,medium,high}]
                     [--filter-category {secrets,injection,xss,...}]
@@ -162,6 +165,22 @@ usage: repo-scanner [-h] [--local-path LOCAL_PATH] [--branch BRANCH]
                     [--no-html] [--no-json]
                     [repo]
 ```
+
+### Selective scans (`--only` / `--check`)
+
+Run one vulnerability family at a time (or a few). Aliases work:
+
+| Type | Aliases |
+|------|---------|
+| `denial_of_service` | `dos`, `redos`, `cwe-400` |
+| `null_pointer` | `null`, `npe`, `cwe-476` |
+| `sql_injection` | `sql`, `sqli` |
+| `command_injection` | `cmd`, `shell` |
+| `secrets` | `secret`, `passwords` |
+| `path_traversal` | `traversal`, `lfi` |
+| `xss` | — |
+| `injection` | all SQL + command + NoSQL |
+| … | `python scan.py --list-checks` |
 
 ## Project structure
 
