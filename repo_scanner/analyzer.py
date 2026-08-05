@@ -27,7 +27,8 @@ from .rules import (
 from .secret_policies import CERTIFICATE_EXTENSIONS, SECRET_POLICY_RULES, SECRET_VIOLATION_POLICIES
 from .validation_detector import detect_validation_integrations, file_uses_external_input
 from .vault_detector import detect_vault_integrations
-from .vuln_types import finding_matches_types, select_rules_for_types
+from .dependency_scanner import scan_dependencies
+from .vuln_types import finding_matches_types, select_rules_for_types, resolve_vuln_types
 
 
 MAX_LINE_LENGTH = 2000
@@ -229,11 +230,13 @@ def scan_directory(
     rules: list[SecurityRule] | None = None,
     include_general_rules: bool = True,
     only_types: list[str] | tuple[str, ...] | None = None,
+    use_osv: bool = True,
 ) -> tuple[list[Finding], int, list[PolicyCompliance], list[str], list[str]]:
     """Scan all files under root and return findings, policy compliance, and integrations.
 
     only_types: optional vulnerability type names/aliases (e.g. ``dos``, ``null_pointer``).
     When set, only matching detection rules and related repo-level checks run.
+    use_osv: query the public OSV API for dependency CVEs (in addition to built-in advisories).
     """
     root = root.resolve()
     selected_types = list(only_types) if only_types else []
@@ -401,6 +404,25 @@ def scan_directory(
         )
         if server_gap:
             all_findings.append(server_gap)
+
+    # Dependency / SCA scan (Snyk Open Source class findings: CVE on PackageReference).
+    # Full scans always run this. Selective scans run it for dos / dependencies types.
+    if selected_types:
+        resolved_ids = {s.id for s in resolve_vuln_types(selected_types)}
+        run_deps = bool(resolved_ids & {"denial_of_service", "dependencies"})
+        # --only dos => dependency DoS/CWE-400 only; --only dependencies => all CVEs
+        only_dos_deps = "denial_of_service" in resolved_ids and "dependencies" not in resolved_ids
+    else:
+        run_deps = True
+        only_dos_deps = False
+
+    if run_deps:
+        all_findings.extend(scan_dependencies(
+            root,
+            seen=seen,
+            use_osv=use_osv,
+            only_dos=only_dos_deps,
+        ))
 
     # Drop any residual findings outside the selected types (context/repo extras).
     if selected_types:

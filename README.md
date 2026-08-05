@@ -60,7 +60,8 @@ Items that cannot be proven by static code patterns are marked **MANUAL** in the
 - **XSS** — unsafe HTML rendering
 - **Path traversal** — user-controlled file paths
 - **Insecure deserialization** — pickle, unsafe YAML, marshal
-- **Denial of service (CWE-400)** — ReDoS, user-controlled regex, unbounded allocations, zip bombs, XML entity expansion, unbounded request body reads
+- **Denial of service (CWE-400)** — ReDoS, user-controlled regex, unbounded allocations, zip bombs, XML entity expansion, unbounded request body reads, **and known DoS CVEs in NuGet/npm packages** (e.g. `Microsoft.Data.OData` / CVE-2018-8269 on `.csproj`, same class as Snyk Open Source)
+- **Dependency vulnerabilities (SCA)** — PackageReference / package.json / requirements.txt CVE matching (built-in advisories + optional OSV)
 - **Null pointer dereference (CWE-476)** — chained get(), unchecked Optional.get(), FirstOrDefault().Member, force unwrap, literal null/None deref
 - **Misconfigurations** — debug mode, disabled TLS verification, permissive CORS
 - **Other code vulnerabilities** — weak crypto, SSRF, sensitive data in logs
@@ -70,7 +71,7 @@ Items that cannot be proven by static code patterns are marked **MANUAL** in the
 - **Python 3.10+**
 - **Git** (only needed when cloning from GitHub)
 
-No pip packages. No Snyk. No cloud accounts.
+No pip packages. No Snyk account required. Optional online OSV lookups for dependency CVEs (disable with `--no-osv`).
 
 ## Quick Start
 
@@ -89,6 +90,9 @@ python scan.py snyk/goof --severity-threshold high
 
 # Run only selected vulnerability types (does not load the full rule set)
 python scan.py snyk/goof --only dos
+# DoS includes Snyk Open Source–style NuGet CVEs (e.g. CVE-2018-8269 on .csproj)
+python scan.py --local-path C:\projects\my-dotnet-app --only dos
+python scan.py --local-path C:\projects\my-dotnet-app --only dependencies
 python scan.py snyk/goof --only null_pointer
 python scan.py --local-path C:\projects\my-app --only secrets sql_injection
 python scan.py snyk/goof --only secrets,xss,path_traversal

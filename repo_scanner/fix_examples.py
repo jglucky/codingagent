@@ -610,6 +610,18 @@ _EXAMPLES: dict[str, dict[str, FixExample]] = {
             language="text",
         ),
     },
+    "deps/": {
+        "cs": FixExample(
+            before='<PackageReference Include="Microsoft.Data.OData" Version="5.6.4" />',
+            after='<PackageReference Include="Microsoft.Data.OData" Version="5.8.4" />\n// CVE-2018-8269 / CWE-400 — upgrade to 5.8.4+',
+            language="csharp",
+        ),
+        "*": FixExample(
+            before="vulnerable PackageReference / npm package version in lockfile or manifest",
+            after="upgrade to the fixed version from the CVE advisory; re-run scan and CI SCA",
+            language="text",
+        ),
+    },
     "dos/": {
         "py": FixExample(
             before='pattern = re.compile(request.args["q"])\nzf.extractall("/tmp/out")\ndata = request.get_data()',
@@ -758,6 +770,7 @@ def get_fix_example(finding: Finding) -> FixExample | None:
         "file_upload_validation": "iv-7/",
         "rate_limiting": "api/no-rate-limit",
         "denial_of_service": "dos/",
+        "dependencies": "deps/",
         "null_pointer": "null/",
         "dependencies": "deps/missing-lockfile",
         "cloud_infra": "cloud/s3-public",

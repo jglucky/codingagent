@@ -105,11 +105,20 @@ VULN_TYPES: dict[str, VulnTypeSpec] = {
     "denial_of_service": VulnTypeSpec(
         id="denial_of_service",
         title="Denial of Service (CWE-400)",
-        description="ReDoS, unbounded allocation, zip bombs, XML entity expansion, body reads",
+        description="ReDoS, unbounded allocation, zip bombs, XML entity expansion, body reads, and DoS CVEs in NuGet/npm (e.g. CVE-2018-8269)",
         categories=frozenset({"denial_of_service"}),
         policies=frozenset({"denial_of_service", "rate_limiting"}),
-        rule_prefixes=("dos/", "api/no-rate-limit", "api/rate-limit"),
+        rule_prefixes=("dos/", "deps/", "api/no-rate-limit", "api/rate-limit"),
         aliases=("dos", "ddos", "redos", "cwe-400", "cwe400", "resource_exhaustion"),
+    ),
+    "dependencies": VulnTypeSpec(
+        id="dependencies",
+        title="Dependency Vulnerabilities (SCA)",
+        description="Known CVEs in NuGet/npm/PyPI packages (Snyk Open Source style, .csproj PackageReference)",
+        categories=frozenset({"dependencies", "denial_of_service"}),
+        policies=frozenset({"dependencies", "denial_of_service"}),
+        rule_prefixes=("deps/",),
+        aliases=("deps", "sca", "cve", "nuget", "packages", "open-source"),
     ),
     "null_pointer": VulnTypeSpec(
         id="null_pointer",

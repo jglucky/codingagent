@@ -31,6 +31,7 @@ class ScanOptions:
     json_report: bool = True
     # Run only these vulnerability types (aliases allowed: dos, null, sql, ...).
     only_types: list[str] | None = None
+    use_osv: bool = True
 
 
 @dataclass
@@ -97,6 +98,7 @@ def scan_repository(options: ScanOptions) -> ScanOutcome:
     findings, files_scanned, policy_compliance, vault_integrations, validation_integrations = scan_directory(
         scan_path,
         only_types=options.only_types,
+        use_osv=options.use_osv,
     )
     findings = apply_severity_threshold(findings, options.severity_threshold)
 

@@ -75,6 +75,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="List vulnerability types available for --only / --check and exit",
     )
     parser.add_argument(
+        "--no-osv",
+        action="store_true",
+        help=(
+            "Disable online OSV dependency CVE lookups (still uses built-in advisories "
+            "such as Microsoft.Data.OData CVE-2018-8269)"
+        ),
+    )
+    parser.add_argument(
         "--severity-threshold",
         choices=["low", "medium", "high"],
         help="Only report issues at this severity or higher",
@@ -164,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         html_report=not args.no_html,
         json_report=not args.no_json,
         only_types=only_types,
+        use_osv=not args.no_osv,
     )
 
     try:
