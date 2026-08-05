@@ -60,8 +60,8 @@ Items that cannot be proven by static code patterns are marked **MANUAL** in the
 - **XSS** — unsafe HTML rendering
 - **Path traversal** — user-controlled file paths
 - **Insecure deserialization** — pickle, unsafe YAML, marshal
-- **Denial of service (CWE-400)** — ReDoS, user-controlled regex, unbounded allocations, zip bombs, XML entity expansion, unbounded request body reads, **and known DoS CVEs in NuGet/npm packages** (e.g. `Microsoft.Data.OData` / CVE-2018-8269 on `.csproj`, same class as Snyk Open Source)
-- **Dependency vulnerabilities (SCA)** — PackageReference / package.json / requirements.txt CVE matching (built-in advisories + optional OSV)
+- **Denial of service (CWE-400)** — SAST (ReDoS, unbounded alloc/reads, zip bombs, XML entities) **and** SCA DoS CVEs (e.g. `Microsoft.Data.OData` / CVE-2018-8269 on `.csproj`)
+- **Dependency vulnerabilities (SCA)** — NuGet/npm/PyPI manifests **and lockfiles**; CVEs classified by CWE into the matching `--only` type (dos, null, sql, xss, deser, …) or all via `--only dependencies`
 - **Null pointer dereference (CWE-476)** — chained get(), unchecked Optional.get(), FirstOrDefault().Member, force unwrap, literal null/None deref
 - **Misconfigurations** — debug mode, disabled TLS verification, permissive CORS
 - **Other code vulnerabilities** — weak crypto, SSRF, sensitive data in logs

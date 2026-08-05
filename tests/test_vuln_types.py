@@ -135,9 +135,13 @@ class CliOnlyTests(unittest.TestCase):
         self.assertEqual(args2.only_types, ["sql"])
 
     def test_all_vuln_types_have_rules(self) -> None:
+        # "dependencies" is SCA-only (no SAST rule ids); all others must select rules.
         for vid in VULN_TYPES:
             rules = select_rules_for_types([vid])
-            self.assertGreater(len(rules), 0, f"type {vid} selected zero rules")
+            if vid == "dependencies":
+                self.assertEqual(len(rules), 0)
+            else:
+                self.assertGreater(len(rules), 0, f"type {vid} selected zero rules")
 
 
 if __name__ == "__main__":

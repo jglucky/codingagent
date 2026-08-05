@@ -405,23 +405,30 @@ def scan_directory(
         if server_gap:
             all_findings.append(server_gap)
 
-    # Dependency / SCA scan (Snyk Open Source class findings: CVE on PackageReference).
-    # Full scans always run this. Selective scans run it for dos / dependencies types.
+    # Dependency / SCA scan (Snyk Open Source class: CVEs on PackageReference / lockfiles).
+    # Full scan: all dependency CVEs. Selective: only types that can map from CWE (dos, null, …).
+    from .dependency_scanner import SCA_RELEVANT_TYPES
+
     if selected_types:
         resolved_ids = {s.id for s in resolve_vuln_types(selected_types)}
-        run_deps = bool(resolved_ids & {"denial_of_service", "dependencies"})
-        # --only dos => dependency DoS/CWE-400 only; --only dependencies => all CVEs
-        only_dos_deps = "denial_of_service" in resolved_ids and "dependencies" not in resolved_ids
+        run_deps = bool(resolved_ids & SCA_RELEVANT_TYPES)
+        # Pass selected types so DoS CVEs appear under --only dos, NPE under --only null, etc.
+        # --only dependencies (or + others including dependencies) ⇒ unfiltered SCA.
+        type_filter: set[str] | None
+        if "dependencies" in resolved_ids:
+            type_filter = None
+        else:
+            type_filter = resolved_ids
     else:
         run_deps = True
-        only_dos_deps = False
+        type_filter = None
 
     if run_deps:
         all_findings.extend(scan_dependencies(
             root,
             seen=seen,
             use_osv=use_osv,
-            only_dos=only_dos_deps,
+            type_filter=type_filter,
         ))
 
     # Drop any residual findings outside the selected types (context/repo extras).
