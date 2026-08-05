@@ -610,6 +610,68 @@ _EXAMPLES: dict[str, dict[str, FixExample]] = {
             language="text",
         ),
     },
+    "dos/": {
+        "py": FixExample(
+            before='pattern = re.compile(request.args["q"])\nzf.extractall("/tmp/out")\ndata = request.get_data()',
+            after=(
+                "# allow-list patterns only; never compile untrusted regex\n"
+                "ALLOWED = re.compile(r\"^[a-z0-9_-]{1,32}$\")\n"
+                "if not ALLOWED.fullmatch(request.args.get(\"q\", \"\")):\n"
+                "    abort(400)\n"
+                "# cap body size and archive expansion\n"
+                "app.config[\"MAX_CONTENT_LENGTH\"] = 1_000_000\n"
+                "safe_extract(zf, dest, max_total_bytes=10_000_000, max_entries=1000)"
+            ),
+            language="python",
+        ),
+        "js": FixExample(
+            before="const re = new RegExp(req.query.pattern);\nconst buf = Buffer.alloc(parseInt(req.query.n));",
+            after=(
+                "// fixed pattern or timeout-capable engine; never new RegExp(userInput)\n"
+                "const re = /^[a-z0-9_-]{1,32}$/;\n"
+                "const n = Math.min(Number(req.query.n) || 0, 1024);\n"
+                "const buf = Buffer.alloc(n);\n"
+                "app.use(express.json({ limit: '100kb' }));"
+            ),
+            language="javascript",
+        ),
+        "cs": FixExample(
+            before='var doc = new XmlDocument();\ndoc.LoadXml(userXml);\nZipFile.ExtractToDirectory(zipPath, dest);',
+            after=(
+                "var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };\n"
+                "using var reader = XmlReader.Create(stream, settings);\n"
+                "// extract zip entries with total size + count caps before writing"
+            ),
+            language="csharp",
+        ),
+        "*": FixExample(
+            before="unbounded regex / body read / zip extract / user-sized allocation",
+            after="timeouts, max body size, max allocation caps, secure XML, bounded archive extraction (CWE-400)",
+            language="text",
+        ),
+    },
+    "null/": {
+        "java": FixExample(
+            before="String name = map.get(key).toString();\nUser u = optional.get();",
+            after="Optional.ofNullable(map.get(key)).map(Object::toString).orElse(\"\");\nif (optional.isPresent()) { User u = optional.get(); }",
+            language="java",
+        ),
+        "cs": FixExample(
+            before="var email = users.FirstOrDefault().Email;",
+            after="var user = users.FirstOrDefault();\nif (user is null) return NotFound();\nvar email = user.Email;",
+            language="csharp",
+        ),
+        "kt": FixExample(
+            before="val n = name!!.length",
+            after="val n = name?.length ?: 0",
+            language="kotlin",
+        ),
+        "*": FixExample(
+            before="obj.member without null check / Optional.get() / FirstOrDefault().X",
+            after="null-check, ?., orElse, isPresent, or pattern matching before use (CWE-476)",
+            language="text",
+        ),
+    },
     "secure/deprecated": {
         "*": FixExample(
             before="DES / RC4 / MD5 / BinaryFormatter / pickle.loads",
@@ -695,6 +757,8 @@ def get_fix_example(finding: Finding) -> FixExample | None:
         "error_handling": "error/stack-trace",
         "file_upload_validation": "iv-7/",
         "rate_limiting": "api/no-rate-limit",
+        "denial_of_service": "dos/",
+        "null_pointer": "null/",
         "dependencies": "deps/missing-lockfile",
         "cloud_infra": "cloud/s3-public",
         "authentication": "auth/allow-anonymous",

@@ -65,13 +65,15 @@ def _is_test_file(relative_file: str) -> bool:
 def _is_false_positive(line: str, match_text: str, rule: SecurityRule, relative_file: str) -> bool:
     if _is_comment_line(line):
         return True
-    # Injection rules: do not treat %s / ${...} as benign placeholders (they indicate risk).
-    placeholder = (
-        PLACEHOLDER_VALUES_NON_INJECTION
-        if rule.category in {"injection", "command_injection"}
-        else PLACEHOLDER_VALUES
-    )
-    if placeholder.search(match_text):
+    # Injection: %s / ${...} are risk signals, not placeholders.
+    # Null-pointer: matches often contain null/None/undefined by design — do not drop them.
+    if rule.category == "null_pointer":
+        placeholder = None
+    elif rule.category in {"injection", "command_injection"}:
+        placeholder = PLACEHOLDER_VALUES_NON_INJECTION
+    else:
+        placeholder = PLACEHOLDER_VALUES
+    if placeholder is not None and placeholder.search(match_text):
         return True
     if re.search(r"(?i)(example\.com|localhost|127\.0\.0\.1|0\.0\.0\.0|test@|foo@bar)", match_text):
         return True

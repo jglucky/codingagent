@@ -591,4 +591,251 @@ SECURITY_RULES: list[SecurityRule] = [
         "Use environment variables or a secrets manager; do not commit credentials in .vscode or .code-workspace files.",
         extensions=frozenset({".json", ".code-workspace"}),
     ),
+
+    # --- Denial of Service / CWE-400 Uncontrolled Resource Consumption ---
+    # Nested quantifiers classic ReDoS shapes: (a+)+, (a*)*, (a+){2,}, (.+)+
+    _rule(
+        "dos/redos-nested",
+        "Regular Expression Denial of Service (ReDoS)",
+        "denial_of_service",
+        "high",
+        r"(?i)[\"'][^\"'\n]{0,120}\((?:[^)\"']{0,40}[+*][^)\"']{0,20})\)(?:[+*]|\{[0-9,]+\})",
+        "Regex with nested quantifiers can cause catastrophic backtracking (CWE-400 / ReDoS).",
+        "Rewrite the regex without nested quantifiers; prefer atomic groups, possessive quantifiers, "
+        "or a non-regex parser; apply timeouts when matching untrusted input.",
+        extensions=ALL_CODE_EXTENSIONS,
+        policy="denial_of_service",
+    ),
+    _rule(
+        "dos/user-controlled-regex",
+        "User-Controlled Regular Expression",
+        "denial_of_service",
+        "high",
+        r"(?i)(?:re\.(?:compile|match|search|fullmatch|findall|finditer|sub)|"
+        r"new\s+RegExp|RegExp\s*\(|"
+        r"new\s+Regex|Regex\.(?:IsMatch|Match|Matches|Replace|Split)|"
+        r"Pattern\.compile)\s*\(\s*"
+        r"(?:req\.|request\.|params\.|query\.|body\.|args\.|"
+        r"Request\.|HttpContext\.|\[From(?:Query|Route|Form|Body)\]|"
+        r"\$_(?:GET|POST|REQUEST)\b|userInput|user_input|pattern\b)",
+        "Compiling or matching a regex built from external input enables ReDoS (CWE-400).",
+        "Never compile untrusted strings as regex; use allow-listed patterns, "
+        "literal string matching, or a regex engine with timeouts/complexity limits.",
+        extensions=frozenset({
+            ".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".rb", ".php", ".go",
+        }),
+        policy="denial_of_service",
+    ),
+    _rule(
+        "dos/unbounded-allocation",
+        "User-Controlled Unbounded Allocation",
+        "denial_of_service",
+        "high",
+        r"(?i)(?:"
+        r"new\s+(?:byte|char|int|long|short|float|double|bool|string|object)\s*\[\s*"
+        r"|new\s+Array\s*\(\s*"
+        r"|Buffer\.alloc(?:Unsafe)?\s*\(\s*"
+        r"|bytearray\s*\(\s*"
+        r"|\[0\]\s*\*\s*(?:int\s*\(\s*)?"
+        r"|np\.empty\s*\(\s*"
+        r")"
+        r"(?:req\.|request\.|params\.|query\.|body\.|"
+        r"Request\.|HttpContext\.|\[From|"
+        r"int\s*\(\s*(?:req|request|params|query)|"
+        r"(?:int|Integer)\.parse(?:Int)?\s*\(\s*(?:req|request|Request)|"
+        r"Convert\.ToInt(?:32|64)\s*\(\s*(?:Request|req|user)|"
+        r"parseInt\s*\(\s*(?:req|request))",
+        "Allocating buffers/arrays from untrusted size values can exhaust memory (CWE-400).",
+        "Cap sizes with a strict maximum; reject oversized inputs before allocation.",
+        extensions=frozenset({
+            ".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".go",
+        }),
+        policy="denial_of_service",
+    ),
+    _rule(
+        "dos/zip-extract-unlimited",
+        "Archive Extraction Without Limits",
+        "denial_of_service",
+        "medium",
+        r"(?i)(?:\.extractall\s*\(|ZipFile\.ExtractToDirectory\s*\(|"
+        r"tarfile\.open\s*\([^)]*\)\.[^\n]{0,40}extractall|"
+        r"shutil\.unpack_archive\s*\()",
+        "Extracting archives without entry count/size limits risks zip bombs (CWE-400).",
+        "Validate total uncompressed size and entry count before extraction; "
+        "prefer streaming extraction with hard caps.",
+        extensions=ALL_CODE_EXTENSIONS,
+        policy="denial_of_service",
+        exclude_line_patterns=(
+            r"(?i)max_size|maxSize|MAX_.*SIZE|entry.?limit|limit.?entr|"
+            r"total.?size|uncompressed|zip.?bomb|safe_extract",
+        ),
+    ),
+    _rule(
+        "dos/xml-entity-expansion",
+        "XML Entity Expansion Risk (DoS)",
+        "denial_of_service",
+        "high",
+        r"(?i)(?:"
+        r"new\s+XmlDocument\s*\(\s*\)|"
+        r"new\s+XmlTextReader\s*\(|"
+        r"DtdProcessing\s*=\s*DtdProcessing\.Parse|"
+        r"XmlResolver\s*=\s*new\s+XmlUrlResolver|"
+        r"DocumentBuilderFactory\.newInstance\s*\(\s*\)|"
+        r"SAXParserFactory\.newInstance\s*\(\s*\)|"
+        r"XMLInputFactory\.newInstance\s*\(\s*\)|"
+        r"lxml\.etree\.XMLParser\s*\([^)]*\)|"
+        r"etree\.XMLParser\s*\([^)]*resolve_entities\s*=\s*True|"
+        r"xml\.dom\.minidom\.parse|"
+        r"XMLReaderFactory\.createXMLReader"
+        r")",
+        "XML parsers that expand entities can enable billion-laughs DoS (CWE-400/CWE-776).",
+        "Disable DTDs and external entities; use secure parser settings "
+        "(DtdProcessing.Prohibit, FEATURE_SECURE_PROCESSING, resolve_entities=False).",
+        extensions=frozenset({
+            ".py", ".pyw", ".java", ".cs", ".js", ".ts", ".rb", ".php", ".go",
+        }),
+        policy="denial_of_service",
+        exclude_line_patterns=(
+            r"(?i)DtdProcessing\.Prohibit|XmlResolver\s*=\s*null|"
+            r"setFeature\s*\(\s*[\"']http://apache\.org/xml/features/disallow-doctype-decl|"
+            r"FEATURE_SECURE_PROCESSING|resolve_entities\s*=\s*False|"
+            r"setExpandEntityReferences\s*\(\s*false",
+        ),
+    ),
+    _rule(
+        "dos/unbounded-request-read",
+        "Unbounded Request Body Read",
+        "denial_of_service",
+        "medium",
+        r"(?i)(?:"
+        r"request\.get_data\s*\(|"
+        r"request\.get_json\s*\(\s*\)|"
+        r"req\.on\s*\(\s*[\"']data[\"']|"
+        r"new\s+StreamReader\s*\(\s*Request\.Body|"
+        r"StreamReader\s*\(\s*Request\.Body|"
+        r"Request\.Body\.CopyTo|"
+        r"IO\.read\s*\(\s*(?:conn|req|request)"
+        r")",
+        "Reading the full request body without size limits can exhaust memory/CPU (CWE-400).",
+        "Enforce max body size at the reverse proxy and app framework "
+        "(client_max_body_size, bodyParser limit, RequestSizeLimit, Flask MAX_CONTENT_LENGTH).",
+        extensions=frozenset({
+            ".py", ".pyw", ".js", ".ts", ".jsx", ".tsx", ".cs", ".java", ".go", ".rb", ".php",
+        }),
+        policy="denial_of_service",
+        exclude_line_patterns=(
+            r"(?i)MAX_CONTENT_LENGTH|maxContentLength|bodyParser\s*\([^)]*limit|"
+            r"RequestSizeLimit|RequestFormLimits|client_max_body_size|"
+            r"limits\s*:\s*\{[^}]*fileSize|max.?body|maxBytes|"
+            r"MaxRequestBodySize|LimitRequestBody|cache\s*=\s*False",
+        ),
+    ),
+
+    # --- Null pointer dereference / CWE-476 ---
+    # Chained .get().member often unwraps Optional/Map values without a null check.
+    _rule(
+        "null/chained-get",
+        "Possible Null Dereference via Chained get()",
+        "null_pointer",
+        "medium",
+        r"(?i)\.get\s*\(\s*[^)]*\)\s*\.\s*\w+",
+        "Calling a method/property on get() result without a null/empty check can cause NPE (CWE-476).",
+        "Check for null/empty (isPresent/containsKey/if) or use safe navigation "
+        "(Optional.map, ?. , orElse, GetValueOrDefault) before member access.",
+        extensions=frozenset({
+            ".java", ".kt", ".cs", ".js", ".ts", ".jsx", ".tsx", ".py", ".pyw", ".go", ".rb", ".php",
+        }),
+        policy="null_pointer",
+        exclude_line_patterns=(
+            # Safe / intentional patterns
+            r"(?i)\?\.|orElse|or_else|ifPresent|isPresent|has_key|containsKey|"
+            r"GetValueOrDefault|null-safe|Optional\.|Objects\.requireNonNull|"
+            r"getattr\s*\(|dict\.get\s*\([^)]+,\s*[^)]+\)|"  # defaulted get
+            r"\.get\s*\(\s*[^)]+,\s*[^)]+\)\s*\.",  # get with default then chain (py/js)
+        ),
+    ),
+    _rule(
+        "null/first-or-default-chain",
+        "Null Dereference Risk after FirstOrDefault/Find",
+        "null_pointer",
+        "high",
+        r"(?i)\.(?:FirstOrDefault|SingleOrDefault|LastOrDefault|Find|FindAsync)\s*\(\s*[^)]*\)\s*\.\s*\w+",
+        "Member access on FirstOrDefault/Find result without a null check can throw NullReferenceException (CWE-476).",
+        "Check for null before member access, or use null-conditional operators (?.) / pattern matching.",
+        extensions=frozenset({".cs", ".fs"}),
+        policy="null_pointer",
+        exclude_line_patterns=(
+            r"\?\.|is\s+not\s+null|is\s+null|\?\?|switch\s*\{",
+        ),
+    ),
+    _rule(
+        "null/optional-get",
+        "Unchecked Optional.get()",
+        "null_pointer",
+        "high",
+        r"(?i)(?:\bOptional(?:\s*\.\s*\w+)*|\boptional|\bopt)\.get\s*\(\s*\)",
+        "Optional.get() without isPresent()/ifPresent() throws if empty (CWE-476).",
+        "Use orElse/orElseThrow/ifPresent/map, or check isPresent() before get().",
+        extensions=frozenset({".java", ".kt"}),
+        policy="null_pointer",
+        exclude_line_patterns=(
+            r"(?i)isPresent|ifPresent|orElse|orElseGet|orElseThrow|isEmpty\s*\(",
+        ),
+    ),
+    _rule(
+        "null/or-else-null",
+        "Optional.orElse(null) Dereference Risk",
+        "null_pointer",
+        "medium",
+        r"(?i)\.orElse\s*\(\s*null\s*\)\s*\.\s*\w+",
+        "Chaining after orElse(null) recreates a null-dereference risk (CWE-476).",
+        "Use orElse(defaultNonNull), orElseThrow, or map/flatMap instead of orElse(null).",
+        extensions=frozenset({".java", ".kt"}),
+        policy="null_pointer",
+    ),
+    _rule(
+        "null/literal-null-deref",
+        "Literal Null/None Dereference",
+        "null_pointer",
+        "high",
+        r"(?i)(?:(?<![.\w])null(?![\w])|(?<![.\w])None(?![\w])|(?<![.\w])undefined(?![\w]))\s*\.\s*\w+",
+        "Member access on a null/None/undefined literal will crash (CWE-476).",
+        "Remove the dead code or guard the reference before use.",
+        extensions=ALL_CODE_EXTENSIONS,
+        policy="null_pointer",
+    ),
+    _rule(
+        "null/force-unwrap",
+        "Force Unwrap / Null Assertion",
+        "null_pointer",
+        "medium",
+        r"(?:"
+        r"\w+!!(?:\.|\[|\s*;|\s*\)|,|$)|"  # Kotlin !!
+        r"(?i)\.(?:FirstOrDefault|SingleOrDefault|Find|FindAsync)\s*\(\s*[^)]*\)\s*!"  # C# null-forgiving
+        r"|\.unwrap\s*\(\s*\)"  # Rust
+        r")",
+        "Force-unwrapping a possibly null/None value can crash on null (CWE-476).",
+        "Prefer safe navigation, explicit null checks, pattern matching, or Result/Option handling.",
+        extensions=frozenset({".kt", ".kts", ".cs", ".rs", ".swift"}),
+        policy="null_pointer",
+        exclude_line_patterns=(
+            r"(?i)\?\.|if\s*\(.*!=\s*null|is\s+not\s+null|expect\s*\(",
+        ),
+    ),
+    _rule(
+        "null/unchecked-pointer-arrow",
+        "Unchecked Pointer Member Access",
+        "null_pointer",
+        "medium",
+        r"(?i)->\s*\w+\s*(?:\(|\[|=|;|,|\)|$)",
+        "Pointer member access (->) without a visible null guard on the same line (CWE-476).",
+        "Check pointers for NULL before dereference; use early returns or assertions with clear contracts.",
+        extensions=frozenset({".c", ".cpp", ".h", ".hpp", ".cc", ".cxx"}),
+        policy="null_pointer",
+        exclude_line_patterns=(
+            r"(?i)(?:if|while|assert|ASSERT|CHECK)\s*\([^\)]*(?:!=\s*NULL|!=\s*nullptr|NULL\s*!=|nullptr\s*!=)",
+            r"(?i)NULL\s*==|nullptr\s*==|==\s*NULL|==\s*nullptr",
+        ),
+    ),
 ]
+

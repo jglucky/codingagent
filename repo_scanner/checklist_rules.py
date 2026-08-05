@@ -326,6 +326,19 @@ def assign_policy_to_base_rules(rules: list[SecurityRule]) -> list[SecurityRule]
         "security/log-sensitive": "sensitive_logs",
         "security/world-writable": "file_security",
         "security/vscode-hardcoded-env": "sensitive_config",
+        "dos/redos-nested": "denial_of_service",
+        "dos/user-controlled-regex": "denial_of_service",
+        "dos/unbounded-allocation": "denial_of_service",
+        "dos/zip-extract-unlimited": "denial_of_service",
+        "dos/xml-entity-expansion": "denial_of_service",
+        "dos/unbounded-request-read": "denial_of_service",
+        "null/chained-get": "null_pointer",
+        "null/first-or-default-chain": "null_pointer",
+        "null/optional-get": "null_pointer",
+        "null/or-else-null": "null_pointer",
+        "null/literal-null-deref": "null_pointer",
+        "null/force-unwrap": "null_pointer",
+        "null/unchecked-pointer-arrow": "null_pointer",
     }
     updated: list[SecurityRule] = []
     for rule in rules:

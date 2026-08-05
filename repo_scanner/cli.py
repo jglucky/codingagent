@@ -64,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
             "secrets", "injection", "xss", "path_traversal",
             "deserialization", "command_injection", "security",
             "authentication", "authorization", "input_validation", "csrf",
+            "denial_of_service", "null_pointer",
         ],
         help="Filter displayed results to a category",
     )

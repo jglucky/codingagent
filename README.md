@@ -60,6 +60,8 @@ Items that cannot be proven by static code patterns are marked **MANUAL** in the
 - **XSS** — unsafe HTML rendering
 - **Path traversal** — user-controlled file paths
 - **Insecure deserialization** — pickle, unsafe YAML, marshal
+- **Denial of service (CWE-400)** — ReDoS, user-controlled regex, unbounded allocations, zip bombs, XML entity expansion, unbounded request body reads
+- **Null pointer dereference (CWE-476)** — chained get(), unchecked Optional.get(), FirstOrDefault().Member, force unwrap, literal null/None deref
 - **Misconfigurations** — debug mode, disabled TLS verification, permissive CORS
 - **Other code vulnerabilities** — weak crypto, SSRF, sensitive data in logs
 
@@ -90,6 +92,10 @@ python scan.py snyk/goof --filter-policy hardcoded_passwords
 python scan.py snyk/goof --filter-policy api_keys
 python scan.py snyk/goof --filter-policy file_upload_validation
 python scan.py snyk/goof --filter-policy allowlist_validation
+python scan.py snyk/goof --filter-category denial_of_service
+python scan.py snyk/goof --filter-policy denial_of_service
+python scan.py snyk/goof --filter-category null_pointer
+python scan.py snyk/goof --filter-policy null_pointer
 
 # Private repository
 python scan.py your-org/private-repo --github-token $env:GITHUB_TOKEN
